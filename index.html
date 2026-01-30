@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAFIA - HOST EDITION</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pixel-red: #ff0000;
+            --dark-red: #800000;
+            --bg-black: #0d0d0d;
+            --border-width: 4px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-black);
+            color: #ffffff;
+            font-family: 'Press Start 2P', cursive;
+            text-transform: uppercase;
+            padding: 20px;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: var(--pixel-red);
+            font-size: 32px;
+            margin: 20px 0;
+            text-shadow: 4px 4px 0px var(--dark-red);
+            text-align: center;
+        }
+
+        #hostContainer {
+            background: #111;
+            border: var(--border-width) solid var(--pixel-red);
+            padding: 20px;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 8px 8px 0px var(--dark-red);
+        }
+
+        .section-title {
+            color: var(--pixel-red);
+            font-size: 14px;
+            margin: 20px 0 10px 0;
+            border-bottom: 2px solid #333;
+            padding-bottom: 5px;
+        }
+
+        .grid-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .role-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 10px;
+        }
+
+        .role-item {
+            background: #222;
+            padding: 10px;
+            border: 2px solid #444;
+            cursor: pointer;
+        }
+
+        .role-item.selected {
+            border-color: var(--pixel-red);
+            background: #300;
+        }
+
+        label { display: block; font-size: 8px; color: #888; margin-bottom: 4px; }
+        
+        input, select {
+            background: #000;
+            border: 2px solid #444;
+            color: #fff;
+            padding: 8px;
+            font-family: 'Press Start 2P', cursive;
+            width: 100%;
+            font-size: 10px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background: var(--pixel-red);
+            color: #000;
+            border: none;
+            padding: 15px;
+            font-family: 'Press Start 2P', cursive;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            box-shadow: 0 6px 0px var(--dark-red);
+        }
+
+        button:disabled { background: #444; box-shadow: 0 6px 0px #222; cursor: not-allowed; }
+
+        #modalOverlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #pixelModal {
+            background: #111;
+            border: 6px solid var(--pixel-red);
+            padding: 25px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+
+        #modalText { font-size: 10px; line-height: 1.8; margin-bottom: 20px; white-space: pre-wrap; }
+        
+        #modalInput { display: none; border-color: var(--pixel-red); margin-bottom: 15px; }
+
+        .status-bar {
+            font-size: 10px;
+            margin-top: 10px;
+            color: var(--pixel-red);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>MAFIA: HOST MENU</h1>
+
+    <div id="hostContainer">
+        <div class="section-title">1. Game Size</div>
+        <label>Number of Players (Including God):</label>
+        <select id="playerCount" onchange="updatePlayerInputs()">
+            <option value="4">4 Players</option>
+            <option value="5">5 Players</option>
+            <option value="6">6 Players</option>
+            <option value="7">7 Players</option>
+            <option value="8" selected>8 Players</option>
+            <option value="10">10 Players</option>
+            <option value="12">12 Players</option>
+        </select>
+
+        <div class="section-title">2. Roles (Select <span id="rolesNeeded">8</span>)</div>
+        <div class="role-grid" id="roleGrid">
+            </div>
+        <div class="status-bar" id="roleStatus">Selected: 0 / 8</div>
+
+        <div class="section-title">3. Player Names</div>
+        <div class="grid-inputs" id="nameInputs">
+            </div>
+
+        <button id="startBtn" onclick="startGame()" disabled>FINALIZE LOBBY</button>
+    </div>
+
+    <div id="modalOverlay">
+        <div id="pixelModal">
+            <div id="modalText"></div>
+            <input id="modalInput" type="text">
+            <button onclick="closeModal()">OK</button>
+        </div>
+    </div>
+
+<script>
+    const availableRoles = ["God", "Cupid", "Mafia", "Doctor", "Troll", "Oracle", "Unspeaker", "Vengeful Spirit", "Citizen", "Citizen", "Citizen"];
+    let selectedRoles = ["God"]; // God is mandatory per your instructions
+    
+    // UI Elements
+    const roleGrid = document.getElementById('roleGrid');
+    const nameInputs = document.getElementById('nameInputs');
+    const roleStatus = document.getElementById('roleStatus');
+    const rolesNeededText = document.getElementById('rolesNeeded');
+    const startBtn = document.getElementById('startBtn');
+
+    function initHostMenu() {
+        // Build Role Selection
+        roleGrid.innerHTML = '';
+        availableRoles.forEach((role, index) => {
+            if(role === "God") return; // God is handled automatically
+            const div = document.createElement('div');
+            div.className = 'role-item';
+            div.innerText = role;
+            div.onclick = () => toggleRole(role, div);
+            roleGrid.appendChild(div);
+        });
+        updatePlayerInputs();
+    }
+
+    function toggleRole(role, element) {
+        const limit = parseInt(document.getElementById('playerCount').value);
+        if (element.classList.contains('selected')) {
+            element.classList.contains('selected');
+            const idx = selectedRoles.indexOf(role);
+            selectedRoles.splice(idx, 1);
+            element.classList.remove('selected');
+        } else {
+            if (selectedRoles.length < limit) {
+                selectedRoles.push(role);
+                element.classList.add('selected');
+            }
+        }
+        updateStatus();
+    }
+
+    function updatePlayerInputs() {
+        const count = parseInt(document.getElementById('playerCount').value);
+        nameInputs.innerHTML = '';
+        for(let i=1; i<=count; i++) {
+            nameInputs.innerHTML += `<div><label>P${i}</label><input id="pName${i}" value="Player ${i}"></div>`;
+        }
+        updateStatus();
+    }
+
+    function updateStatus() {
+        const count = parseInt(document.getElementById('playerCount').value);
+        rolesNeededText.innerText = count;
+        roleStatus.innerText = `Selected: ${selectedRoles.length} / ${count}`;
+        startBtn.disabled = selectedRoles.length !== count;
+    }
+
+    // --- GAME LOGIC ---
+    let players = [];
+    let killTarget = null;
+    let healTarget = null;
+    let currentNightActionIndex = 0;
+    const nightOrder = ["Cupid", "Mafia", "Doctor", "Oracle", "Unspeaker"];
+
+    const overlay = document.getElementById('modalOverlay');
+    const modalText = document.getElementById('modalText');
+    const modalInput = document.getElementById('modalInput');
+    let modalResolver = null;
+
+    function pixelAlert(text) {
+        return new Promise(resolve => {
+            modalText.innerText = text;
+            modalInput.style.display = 'none';
+            overlay.style.display = 'flex';
+            modalResolver = resolve;
+        });
+    }
+
+    function pixelPrompt(text) {
+        return new Promise(resolve => {
+            modalText.innerText = text;
+            modalInput.style.display = 'block';
+            modalInput.value = "";
+            overlay.style.display = 'flex';
+            modalInput.focus();
+            modalResolver = resolve;
+        });
+    }
+
+    function closeModal() {
+        overlay.style.display = 'none';
+        if (modalResolver) modalResolver(modalInput.value);
+    }
+
+    function shuffle(array) {
+        return array.sort(() => Math.random() - 0.5);
+    }
+
+    async function startGame() {
+        const count = parseInt(document.getElementById('playerCount').value);
+        players = [];
+        
+        for(let i=1; i<=count; i++) {
+            const name = document.getElementById(`pName${i}`).value;
+            players.push({
+                id: i-1,
+                name: name,
+                role: "",
+                isAlive: true,
+                isLinked: [false, ""]
+            });
+        }
+
+        const roles = shuffle([...selectedRoles]);
+        for(let i=0; i<players.length; i++) {
+            players[i].role = roles[i];
+            await pixelAlert(`GIVE SCREEN TO ${players[i].name}`);
+            await pixelAlert(`${players[i].name}, YOUR ROLE IS: ${players[i].role}`);
+        }
+
+        document.getElementById('hostContainer').style.display = 'none';
+        document.querySelector('h1').innerText = "MAFIA: ACTIVE GAME";
+        startNightPhase();
+    }
+
+    function getAliveTargetList() {
+        let list = "\n--- ALIVE PLAYERS ---\n";
+        players.forEach(p => {
+            if(p.isAlive && p.role !== "God") {
+                list += `[${p.id + 1}] ${p.name}\n`;
+            }
+        });
+        return list;
+    }
+
+    async function startNightPhase() {
+        if(currentNightActionIndex < nightOrder.length) {
+            const role = nightOrder[currentNightActionIndex];
+            const actor = players.find(p => p.role === role && p.isAlive);
+
+            if(!actor) {
+                currentNightActionIndex++;
+                startNightPhase();
+                return;
+            }
+
+            await pixelAlert(`CITY SLEEPS. ${role.toUpperCase()} WAKE UP.`);
+            
+            if(role === "Mafia") {
+                const target = await pixelPrompt(`MAFIA: CHOOSE VICTIM INDEX:\n${getAliveTargetList()}`);
+                killTarget = parseInt(target) - 1;
+            } else if(role === "Doctor") {
+                const target = await pixelPrompt(`DOCTOR: CHOOSE TO SAVE:\n${getAliveTargetList()}`);
+                healTarget = parseInt(target) - 1;
+            } else if(role === "Cupid") {
+                const targets = await pixelPrompt(`CUPID: LINK TWO INDEXES (e.g. 1,2):\n${getAliveTargetList()}`);
+                const ids = targets.split(',').map(x => parseInt(x.trim()) - 1);
+                if(ids.length === 2 && players[ids[0]] && players[ids[1]]) {
+                    players[ids[0]].isLinked = [true, players[ids[1]].name];
+                    players[ids[1]].isLinked = [true, players[ids[0]].name];
+                }
+            } else if(role === "Oracle") {
+                const target = await pixelPrompt(`ORACLE: REVEAL ROLE OF:\n${getAliveTargetList()}`);
+                const p = players[parseInt(target)-1];
+                await pixelAlert(`${p.name} is the ${p.role}`);
+            } else if(role === "Unspeaker") {
+                const mafia = players.find(p => p.role === "Mafia");
+                await pixelAlert(`THE MAFIA IS: ${mafia ? mafia.name : "NONE"}`);
+            }
+
+            currentNightActionIndex++;
+            startNightPhase();
+        } else {
+            resolveNight();
+        }
+    }
+
+    async function resolveNight() {
+        if(killTarget !== null && killTarget !== healTarget) {
+            const victim = players[killTarget];
+            await pixelAlert(`${victim.name} WAS KILLED DURING THE NIGHT.`);
+            await handleDeath(killTarget);
+        } else {
+            await pixelAlert(`NO ONE DIED TONIGHT.`);
+        }
+        
+        killTarget = null; healTarget = null; currentNightActionIndex = 0;
+        if(!(await checkWin())) startDayPhase();
+    }
+
+    async function handleDeath(index) {
+        const p = players[index];
+        if(!p.isAlive) return;
+        p.isAlive = false;
+        
+        const lastWords = await pixelPrompt(`${p.name}, YOU ARE DEAD. FINAL WORDS:`);
+        await pixelAlert(`${p.name}'S LAST WORDS: "${lastWords}"`);
+
+        // Cupid Link logic
+        if(p.isLinked[0]) {
+            const partner = players.find(x => x.name === p.isLinked[1] && x.isAlive);
+            if(partner) {
+                await pixelAlert(`${partner.name} DIED OF A BROKEN HEART.`);
+                await handleDeath(partner.id);
+            }
+        }
+    }
+
+    async function startDayPhase() {
+        await pixelAlert(`DAYTIME. DISCUSS AND VOTE.`);
+        const vote = await pixelPrompt(`INDEX TO EXILE (OR 'NONE'):\n${getAliveTargetList()}`);
+        if(vote && vote.toLowerCase() !== 'none') {
+            const idx = parseInt(vote) - 1;
+            const victim = players[idx];
+            if(victim && victim.role === "Troll") {
+                await pixelAlert(`THE TROLL WAS EXILED! THE TROLL WINS THE GAME!`);
+                location.reload();
+            } else if (victim) {
+                await handleDeath(idx);
+            }
+        }
+        if(!(await checkWin())) startNightPhase();
+    }
+
+    async function checkWin() {
+        const alive = players.filter(p => p.isAlive && p.role !== "God");
+        const mafia = alive.filter(p => p.role === "Mafia");
+        if(mafia.length === 0) {
+            await pixelAlert("TOWN WINS! MAFIA ELIMINATED.");
+            location.reload();
+            return true;
+        }
+        if(mafia.length >= (alive.length - mafia.length)) {
+            await pixelAlert("MAFIA WINS! TOWN OVERPOWERED.");
+            location.reload();
+            return true;
+        }
+        return false;
+    }
+
+    initHostMenu();
+</script>
+</body>
+</html>
